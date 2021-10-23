@@ -1,31 +1,8 @@
-# CMAKE required version
 cmake_minimum_required (VERSION 3.0)
-
-if(APPLE)
-    set(TARGET "OSX" CACHE STRING "target platform")
-    set(ARCH "x86_64" CACHE STRING "target architecture")
-endif()
-
-set(LIBRARY_TYPE "STATIC" CACHE STRING "Library type")
-
-if("${TARGET}" STREQUAL "IOS")
-    set(IOS TRUE)
-endif()													
-if(UNIX AND NOT APPLE AND NOT IOS)
-   set(LINUX TRUE)
-endif()
-
-# set the project name
-project (lzma)						 
-
-if(CMAKE_SIZEOF_VOID_P EQUAL 8)
-    if (WIN32)
-        set(WIN64 TRUE)
-    endif()
-endif()
+project(lzma)				 
 
 set(CMAKE_C_STANDARD 11)
-set (LIBRARY_TYPE "STATIC")
+set(LIBRARY_TYPE "STATIC")
 
 if(LINUX)
     set(CMAKE_C_FLAGS "-fPIC" CACHE STRING "" FORCE)
@@ -79,16 +56,8 @@ add_library(${PROJECT_NAME} ${LIBRARY_TYPE}
 	src/XzEnc.c
 	src/XzIn.c
  )
-
-if (CMAKE_BUILD_TYPE MATCHES Debug)
-    target_compile_definitions(${PROJECT_NAME} PUBLIC
-        DEBUG
-    )
-else()
-    target_compile_definitions(${PROJECT_NAME} PUBLIC
-        NDEBUG
-    )
-endif()
+target_include_directories(${PROJECT_NAME} PUBLIC ".")
+install(TARGETS ${PROJECT_NAME} DESTINATION ".")
 
 if (LINUX)
     add_compile_options(-fPIC)
