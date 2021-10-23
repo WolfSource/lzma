@@ -4,6 +4,9 @@ project(lzma)
 set(CMAKE_C_STANDARD 11)
 set(LIBRARY_TYPE "STATIC")
 
+set(CMAKE_INSTALL_INCLUDEDIR ${CMAKE_INSTALL_PREFIX}/include)
+set(CMAKE_INSTALL_LIBDIR ${CMAKE_INSTALL_PREFIX}/lib)
+
 if(LINUX)
     set(CMAKE_C_FLAGS "-fPIC" CACHE STRING "" FORCE)
 endif()
@@ -57,8 +60,15 @@ add_library(${PROJECT_NAME} ${LIBRARY_TYPE}
 	src/XzIn.c
  )
 target_include_directories(${PROJECT_NAME} PUBLIC ".")
-install(TARGETS ${PROJECT_NAME} DESTINATION ".")
-
+install(TARGETS ${PROJECT_NAME}   
+		RUNTIME DESTINATION bin
+        LIBRARY DESTINATION lib)
+install(FILES
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/7z.h"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/7zAlloc.h"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/7zCrc.h"
+    DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}")
+	
 if (LINUX)
     add_compile_options(-fPIC)
 endif()
