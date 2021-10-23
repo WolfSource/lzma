@@ -61,7 +61,6 @@ add_library(${PROJECT_NAME} ${LIBRARY_TYPE}
  )
 target_include_directories(${PROJECT_NAME} PUBLIC ".")
 install(TARGETS ${PROJECT_NAME}   
-		RUNTIME DESTINATION bin
         LIBRARY DESTINATION lib)
 	
 if (LINUX)
