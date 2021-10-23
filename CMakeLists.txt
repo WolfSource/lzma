@@ -63,10 +63,6 @@ target_include_directories(${PROJECT_NAME} PUBLIC ".")
 install(TARGETS ${PROJECT_NAME}   
 		RUNTIME DESTINATION bin
         LIBRARY DESTINATION lib)
-install(FILES
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/7z.h"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/7zTypes.h"
-    DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}")
 	
 if (LINUX)
     add_compile_options(-fPIC)
