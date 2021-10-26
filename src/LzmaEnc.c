@@ -1,5 +1,5 @@
 /* LzmaEnc.c -- LZMA Encoder
-2021-07-10: Igor Pavlov : Public domain */
+2021-04-01: Igor Pavlov : Public domain */
 
 #include "Precomp.h"
 
@@ -12,7 +12,6 @@
 #include <stdio.h>
 #endif
 
-#include "CpuArch.h"
 #include "LzmaEnc.h"
 
 #include "LzFind.h"
@@ -37,8 +36,8 @@ void LzmaEnc_RestoreState(CLzmaEncHandle pp);
 static unsigned g_STAT_OFFSET = 0;
 #endif
 
-/* for good normalization speed we still reserve 256 MB before 4 GB range */
-#define kLzmaMaxHistorySize ((UInt32)15 << 28)
+#define kLzmaMaxHistorySize ((UInt32)3 << 29)
+/* #define kLzmaMaxHistorySize ((UInt32)7 << 29) */
 
 #define kNumTopBits 24
 #define kTopValue ((UInt32)1 << kNumTopBits)
@@ -79,12 +78,13 @@ void LzmaEncProps_Normalize(CLzmaEncProps *p)
 
   if (p->dictSize > p->reduceSize)
   {
-    UInt32 v = (UInt32)p->reduceSize;
-    const UInt32 kReduceMin = ((UInt32)1 << 12);
-    if (v < kReduceMin)
-      v = kReduceMin;
-    if (p->dictSize > v)
-      p->dictSize = v;
+    unsigned i;
+    UInt32 reduceSize = (UInt32)p->reduceSize;
+    for (i = 11; i <= 30; i++)
+    {
+      if (reduceSize <= ((UInt32)2 << i)) { p->dictSize = ((UInt32)2 << i); break; }
+      if (reduceSize <= ((UInt32)3 << i)) { p->dictSize = ((UInt32)3 << i); break; }
+    }
   }
 
   if (p->lc < 0) p->lc = 3;
@@ -113,85 +113,18 @@ UInt32 LzmaEncProps_GetDictSize(const CLzmaEncProps *props2)
   return props.dictSize;
 }
 
-
-/*
-x86/x64:
-
-BSR:
-  IF (SRC == 0) ZF = 1, DEST is undefined;
-                  AMD : DEST is unchanged;
-  IF (SRC != 0) ZF = 0; DEST is index of top non-zero bit
-  BSR is slow in some processors
-
-LZCNT:
-  IF (SRC  == 0) CF = 1, DEST is size_in_bits_of_register(src) (32 or 64)
-  IF (SRC  != 0) CF = 0, DEST = num_lead_zero_bits
-  IF (DEST == 0) ZF = 1;
-
-LZCNT works only in new processors starting from Haswell.
-if LZCNT is not supported by processor, then it's executed as BSR.
-LZCNT can be faster than BSR, if supported.
-*/
-
-// #define LZMA_LOG_BSR
-
-#if defined(MY_CPU_ARM_OR_ARM64) /* || defined(MY_CPU_X86_OR_AMD64) */
-
-  #if (defined(__clang__) && (__clang_major__ >= 6)) \
-      || (defined(__GNUC__) && (__GNUC__ >= 6))
-      #define LZMA_LOG_BSR
-  #elif defined(_MSC_VER) && (_MSC_VER >= 1300)
-    // #if defined(MY_CPU_ARM_OR_ARM64)
-      #define LZMA_LOG_BSR
-    // #endif
-  #endif
+#if defined(_MSC_VER) && (_MSC_VER >= 1400)
+/* BSR code is fast for some new CPUs */
+/* #define LZMA_LOG_BSR */
 #endif
-
-// #include <intrin.h>
 
 #ifdef LZMA_LOG_BSR
 
-#if defined(__clang__) \
-    || defined(__GNUC__)
+#define kDicLogSizeMaxCompress 32
 
-/*
-  C code:                  : (30 - __builtin_clz(x))
-    gcc9/gcc10 for x64 /x86  : 30 - (bsr(x) xor 31)
-    clang10 for x64          : 31 + (bsr(x) xor -32)
-*/
+#define BSR2_RET(pos, res) { unsigned long zz; _BitScanReverse(&zz, (pos)); res = (zz + zz) + ((pos >> (zz - 1)) & 1); }
 
-  #define MY_clz(x)  ((unsigned)__builtin_clz(x))
-  // __lzcnt32
-  // __builtin_ia32_lzcnt_u32
-
-#else  // #if defined(_MSC_VER)
-
-  #ifdef MY_CPU_ARM_OR_ARM64
-
-    #define MY_clz  _CountLeadingZeros
-
-  #else // if defined(MY_CPU_X86_OR_AMD64)
-
-    // #define MY_clz  __lzcnt  // we can use lzcnt (unsupported by old CPU)
-    // _BitScanReverse code is not optimal for some MSVC compilers
-    #define BSR2_RET(pos, res) { unsigned long zz; _BitScanReverse(&zz, (pos)); zz--; \
-      res = (zz + zz) + (pos >> zz); }
-
-  #endif // MY_CPU_X86_OR_AMD64
-
-#endif // _MSC_VER
-
-
-#ifndef BSR2_RET
-
-    #define BSR2_RET(pos, res) { unsigned zz = 30 - MY_clz(pos); \
-      res = (zz + zz) + (pos >> zz); }
-
-#endif
-
-
-unsigned GetPosSlot1(UInt32 pos);
-unsigned GetPosSlot1(UInt32 pos)
+static unsigned GetPosSlot1(UInt32 pos)
 {
   unsigned res;
   BSR2_RET(pos, res);
@@ -200,10 +133,10 @@ unsigned GetPosSlot1(UInt32 pos)
 #define GetPosSlot2(pos, res) { BSR2_RET(pos, res); }
 #define GetPosSlot(pos, res) { if (pos < 2) res = pos; else BSR2_RET(pos, res); }
 
+#else
 
-#else // ! LZMA_LOG_BSR
-
-#define kNumLogBits (11 + sizeof(size_t) / 8 * 3)
+#define kNumLogBits (9 + sizeof(size_t) / 2)
+/* #define kNumLogBits (11 + sizeof(size_t) / 8 * 3) */
 
 #define kDicLogSizeMaxCompress ((kNumLogBits - 1) * 2 + 7)
 
@@ -250,7 +183,7 @@ static void LzmaEnc_FastPosInit(Byte *g_FastPos)
 #define GetPosSlot2(pos, res) { BSR2_RET(pos, res); }
 #define GetPosSlot(pos, res) { if (pos < kNumFullDistances) res = p->g_FastPos[pos & (kNumFullDistances - 1)]; else BSR2_RET(pos, res); }
 
-#endif // LZMA_LOG_BSR
+#endif
 
 
 #define LZMA_NUM_REPS 4
@@ -386,7 +319,7 @@ typedef UInt32 CProbPrice;
 typedef struct
 {
   void *matchFinderObj;
-  IMatchFinder2 matchFinder;
+  IMatchFinder matchFinder;
 
   unsigned optCur;
   unsigned optEnd;
@@ -431,14 +364,10 @@ typedef struct
   // begin of CMatchFinderMt is used in LZ thread
   CMatchFinderMt matchFinderMt;
   // end of CMatchFinderMt is used in BT and HASH threads
-  // #else
-  // CMatchFinder matchFinderBase;
   #endif
+
   CMatchFinder matchFinderBase;
 
-  
-  // we suppose that we have 8-bytes alignment after CMatchFinder
- 
   #ifndef _7ZIP_ST
   Byte pad[128];
   #endif
@@ -446,10 +375,8 @@ typedef struct
   // LZ thread
   CProbPrice ProbPrices[kBitModelTotal >> kNumMoveReducingBits];
 
-  // we want {len , dist} pairs to be 8-bytes aligned in matches array
-  UInt32 matches[LZMA_MATCH_LEN_MAX * 2 + 2];
+  UInt32 matches[LZMA_MATCH_LEN_MAX * 2 + 2 + 1];
 
-  // we want 8-bytes alignment here
   UInt32 alignPrices[kAlignTableSize];
   UInt32 posSlotPrices[kNumLenToPosStates][kDistTableSizeMax];
   UInt32 distancesPrices[kNumLenToPosStates][kNumFullDistances];
@@ -478,19 +405,12 @@ typedef struct
 
   CSaveState saveState;
 
-  // BoolInt mf_Failure;
   #ifndef _7ZIP_ST
   Byte pad2[128];
   #endif
 } CLzmaEnc;
 
 
-#define MFB (p->matchFinderBase)
-/*
-#ifndef _7ZIP_ST
-#define MFB (p->matchFinderMt.MatchFinder)
-#endif
-*/
 
 #define COPY_ARR(dest, src, arr) memcpy(dest->arr, src->arr, sizeof(src->arr));
 
@@ -555,20 +475,10 @@ SRes LzmaEnc_SetProps(CLzmaEncHandle pp, const CLzmaEncProps *props2)
 
   if (props.lc > LZMA_LC_MAX
       || props.lp > LZMA_LP_MAX
-      || props.pb > LZMA_PB_MAX)
+      || props.pb > LZMA_PB_MAX
+      || props.dictSize > ((UInt64)1 << kDicLogSizeMaxCompress)
+      || props.dictSize > kLzmaMaxHistorySize)
     return SZ_ERROR_PARAM;
-
-
-  if (props.dictSize > kLzmaMaxHistorySize)
-    props.dictSize = kLzmaMaxHistorySize;
-
-  #ifndef LZMA_LOG_BSR
-  {
-    const UInt64 dict64 = props.dictSize;
-    if (dict64 > ((UInt64)1 << kDicLogSizeMaxCompress))
-      return SZ_ERROR_PARAM;
-  }
-  #endif
 
   p->dictSize = props.dictSize;
   {
@@ -584,7 +494,7 @@ SRes LzmaEnc_SetProps(CLzmaEncHandle pp, const CLzmaEncProps *props2)
   p->pb = (unsigned)props.pb;
   p->fastMode = (props.algo == 0);
   // p->_maxMode = True;
-  MFB.btMode = (Byte)(props.btMode ? 1 : 0);
+  p->matchFinderBase.btMode = (Byte)(props.btMode ? 1 : 0);
   {
     unsigned numHashBytes = 4;
     if (props.btMode)
@@ -594,10 +504,10 @@ SRes LzmaEnc_SetProps(CLzmaEncHandle pp, const CLzmaEncProps *props2)
     }
     if (props.numHashBytes >= 5) numHashBytes = 5;
 
-    MFB.numHashBytes = numHashBytes;
+    p->matchFinderBase.numHashBytes = numHashBytes;
   }
 
-  MFB.cutValue = props.mc;
+  p->matchFinderBase.cutValue = props.mc;
 
   p->writeEndMark = (BoolInt)props.writeEndMark;
 
@@ -621,7 +531,7 @@ SRes LzmaEnc_SetProps(CLzmaEncHandle pp, const CLzmaEncProps *props2)
 void LzmaEnc_SetDataSize(CLzmaEncHandle pp, UInt64 expectedDataSiize)
 {
   CLzmaEnc *p = (CLzmaEnc *)pp;
-  MFB.expectedDataSize = expectedDataSiize;
+  p->matchFinderBase.expectedDataSize = expectedDataSiize;
 }
 
 
@@ -1097,11 +1007,7 @@ static unsigned ReadMatchDistances(CLzmaEnc *p, unsigned *numPairsRes)
   
   p->additionalOffset++;
   p->numAvail = p->matchFinder.GetNumAvailableBytes(p->matchFinderObj);
-  {
-    const UInt32 *d = p->matchFinder.GetMatches(p->matchFinderObj, p->matches);
-    // if (!d) { p->mf_Failure = True; *numPairsRes = 0;  return 0; }
-    numPairs = (unsigned)(d - p->matches);
-  }
+  numPairs = p->matchFinder.GetMatches(p->matchFinderObj, p->matches);
   *numPairsRes = numPairs;
   
   #ifdef SHOW_STAT
@@ -1117,7 +1023,7 @@ static unsigned ReadMatchDistances(CLzmaEnc *p, unsigned *numPairsRes)
   if (numPairs == 0)
     return 0;
   {
-    const unsigned len = p->matches[(size_t)numPairs - 2];
+    unsigned len = p->matches[(size_t)numPairs - 2];
     if (len != p->numFastBytes)
       return len;
     {
@@ -1127,7 +1033,7 @@ static unsigned ReadMatchDistances(CLzmaEnc *p, unsigned *numPairsRes)
       {
         const Byte *p1 = p->matchFinder.GetPointerToCurrentPos(p->matchFinderObj) - 1;
         const Byte *p2 = p1 + len;
-        const ptrdiff_t dif = (ptrdiff_t)-1 - (ptrdiff_t)p->matches[(size_t)numPairs - 1];
+        ptrdiff_t dif = (ptrdiff_t)-1 - (ptrdiff_t)p->matches[(size_t)numPairs - 1];
         const Byte *lim = p1 + numAvail;
         for (; p2 != lim && *p2 == p2[dif]; p2++)
         {}
@@ -1283,8 +1189,6 @@ static unsigned GetOptimum(CLzmaEnc *p, UInt32 position)
       repLens[i] = len;
       if (len > repLens[repMaxIndex])
         repMaxIndex = i;
-      if (len == LZMA_MATCH_LEN_MAX) // 21.03 : optimization
-        break;
     }
     
     if (repLens[repMaxIndex] >= p->numFastBytes)
@@ -1297,12 +1201,10 @@ static unsigned GetOptimum(CLzmaEnc *p, UInt32 position)
     }
     
     matches = p->matches;
-    #define MATCHES  matches
-    // #define MATCHES  p->matches
     
     if (mainLen >= p->numFastBytes)
     {
-      p->backRes = MATCHES[(size_t)numPairs - 1] + LZMA_NUM_REPS;
+      p->backRes = matches[(size_t)numPairs - 1] + LZMA_NUM_REPS;
       MOVE_POS(p, mainLen - 1)
       return mainLen;
     }
@@ -1396,13 +1298,13 @@ static unsigned GetOptimum(CLzmaEnc *p, UInt32 position)
         if (len < 2)
           len = 2;
         else
-          while (len > MATCHES[offs])
+          while (len > matches[offs])
             offs += 2;
     
         for (; ; len++)
         {
           COptimal *opt;
-          UInt32 dist = MATCHES[(size_t)offs + 1];
+          UInt32 dist = matches[(size_t)offs + 1];
           UInt32 price = normalMatchPrice + GET_PRICE_LEN(&p->lenEnc, posState, len);
           unsigned lenToPosState = GetLenToPosState(len);
        
@@ -1426,7 +1328,7 @@ static unsigned GetOptimum(CLzmaEnc *p, UInt32 position)
             opt->extra = 0;
           }
           
-          if (len == MATCHES[offs])
+          if (len == matches[offs])
           {
             offs += 2;
             if (offs == numPairs)
@@ -1847,8 +1749,8 @@ static unsigned GetOptimum(CLzmaEnc *p, UInt32 position)
     if (newLen > numAvail)
     {
       newLen = numAvail;
-      for (numPairs = 0; newLen > MATCHES[numPairs]; numPairs += 2);
-      MATCHES[numPairs] = (UInt32)newLen;
+      for (numPairs = 0; newLen > matches[numPairs]; numPairs += 2);
+      matches[numPairs] = (UInt32)newLen;
       numPairs += 2;
     }
     
@@ -1867,9 +1769,9 @@ static unsigned GetOptimum(CLzmaEnc *p, UInt32 position)
       }
 
       offs = 0;
-      while (startLen > MATCHES[offs])
+      while (startLen > matches[offs])
         offs += 2;
-      dist = MATCHES[(size_t)offs + 1];
+      dist = matches[(size_t)offs + 1];
       
       // if (dist >= kNumFullDistances)
       GetPosSlot2(dist, posSlot);
@@ -1896,7 +1798,7 @@ static unsigned GetOptimum(CLzmaEnc *p, UInt32 position)
           }
         }
 
-        if (len == MATCHES[offs])
+        if (len == matches[offs])
         {
           // if (p->_maxMode) {
           // MATCH : LIT : REP_0
@@ -1961,7 +1863,7 @@ static unsigned GetOptimum(CLzmaEnc *p, UInt32 position)
           offs += 2;
           if (offs == numPairs)
             break;
-          dist = MATCHES[(size_t)offs + 1];
+          dist = matches[(size_t)offs + 1];
           // if (dist >= kNumFullDistances)
             GetPosSlot2(dist, posSlot);
         }
@@ -2179,23 +2081,8 @@ static SRes CheckErrors(CLzmaEnc *p)
     return p->result;
   if (p->rc.res != SZ_OK)
     p->result = SZ_ERROR_WRITE;
-
-  #ifndef _7ZIP_ST
-  if (
-      // p->mf_Failure ||
-        (p->mtMode &&
-          ( // p->matchFinderMt.failure_LZ_LZ ||
-            p->matchFinderMt.failure_LZ_BT))
-     )
-  {
-    p->result = MY_HRES_ERROR__INTERNAL_ERROR;
-    // printf("\nCheckErrors p->matchFinderMt.failureLZ\n");
-  }
-  #endif
-
-  if (MFB.result != SZ_OK)
+  if (p->matchFinderBase.result != SZ_OK)
     p->result = SZ_ERROR_READ;
-  
   if (p->result != SZ_OK)
     p->finished = True;
   return p->result;
@@ -2336,11 +2223,11 @@ MY_NO_INLINE static void FillDistancesPrices(CLzmaEnc *p)
 static void LzmaEnc_Construct(CLzmaEnc *p)
 {
   RangeEnc_Construct(&p->rc);
-  MatchFinder_Construct(&MFB);
+  MatchFinder_Construct(&p->matchFinderBase);
   
   #ifndef _7ZIP_ST
-  p->matchFinderMt.MatchFinder = &MFB;
   MatchFinderMt_Construct(&p->matchFinderMt);
+  p->matchFinderMt.MatchFinder = &p->matchFinderBase;
   #endif
 
   {
@@ -2356,6 +2243,7 @@ static void LzmaEnc_Construct(CLzmaEnc *p)
   LzmaEnc_InitPriceTables(p->ProbPrices);
   p->litProbs = NULL;
   p->saveState.litProbs = NULL;
+
 }
 
 CLzmaEncHandle LzmaEnc_Create(ISzAllocPtr alloc)
@@ -2381,7 +2269,7 @@ static void LzmaEnc_Destruct(CLzmaEnc *p, ISzAllocPtr alloc, ISzAllocPtr allocBi
   MatchFinderMt_Destruct(&p->matchFinderMt, allocBig);
   #endif
   
-  MatchFinder_Free(&MFB, allocBig);
+  MatchFinder_Free(&p->matchFinderBase, allocBig);
   LzmaEnc_FreeLits(p, alloc);
   RangeEnc_Free(&p->rc, alloc);
 }
@@ -2399,12 +2287,6 @@ static SRes LzmaEnc_CodeOneBlock(CLzmaEnc *p, UInt32 maxPackSize, UInt32 maxUnpa
   UInt32 nowPos32, startPos32;
   if (p->needInit)
   {
-    #ifndef _7ZIP_ST
-    if (p->mtMode)
-    {
-      RINOK(MatchFinderMt_InitMt(&p->matchFinderMt));
-    }
-    #endif
     p->matchFinder.Init(p->matchFinderObj);
     p->needInit = 0;
   }
@@ -2700,13 +2582,11 @@ static SRes LzmaEnc_CodeOneBlock(CLzmaEnc *p, UInt32 maxPackSize, UInt32 maxUnpa
 static SRes LzmaEnc_Alloc(CLzmaEnc *p, UInt32 keepWindowSize, ISzAllocPtr alloc, ISzAllocPtr allocBig)
 {
   UInt32 beforeSize = kNumOpts;
-  UInt32 dictSize;
-
   if (!RangeEnc_Alloc(&p->rc, alloc))
     return SZ_ERROR_MEM;
 
   #ifndef _7ZIP_ST
-  p->mtMode = (p->multiThread && !p->fastMode && (MFB.btMode != 0));
+  p->mtMode = (p->multiThread && !p->fastMode && (p->matchFinderBase.btMode != 0));
   #endif
 
   {
@@ -2725,50 +2605,30 @@ static SRes LzmaEnc_Alloc(CLzmaEnc *p, UInt32 keepWindowSize, ISzAllocPtr alloc,
     }
   }
 
-  MFB.bigHash = (Byte)(p->dictSize > kBigHashDicLimit ? 1 : 0);
+  p->matchFinderBase.bigHash = (Byte)(p->dictSize > kBigHashDicLimit ? 1 : 0);
 
-
-  dictSize = p->dictSize;
-  if (dictSize == ((UInt32)2 << 30) ||
-      dictSize == ((UInt32)3 << 30))
-  {
-    /* 21.03 : here we reduce the dictionary for 2 reasons:
-       1) we don't want 32-bit back_distance matches in decoder for 2 GB dictionary.
-       2) we want to elimate useless last MatchFinder_Normalize3() for corner cases,
-          where data size is aligned for 1 GB: 5/6/8 GB.
-          That reducing must be >= 1 for such corner cases. */
-    dictSize -= 1;
-  }
-
-  if (beforeSize + dictSize < keepWindowSize)
-    beforeSize = keepWindowSize - dictSize;
-
-  /* in worst case we can look ahead for
-        max(LZMA_MATCH_LEN_MAX, numFastBytes + 1 + numFastBytes) bytes.
-     we send larger value for (keepAfter) to MantchFinder_Create():
-        (numFastBytes + LZMA_MATCH_LEN_MAX + 1)
-  */
+  if (beforeSize + p->dictSize < keepWindowSize)
+    beforeSize = keepWindowSize - p->dictSize;
 
   #ifndef _7ZIP_ST
   if (p->mtMode)
   {
-    RINOK(MatchFinderMt_Create(&p->matchFinderMt, dictSize, beforeSize,
-        p->numFastBytes, LZMA_MATCH_LEN_MAX + 1 /* 18.04 */
+    RINOK(MatchFinderMt_Create(&p->matchFinderMt, p->dictSize, beforeSize, p->numFastBytes,
+        LZMA_MATCH_LEN_MAX
+        + 1  /* 18.04 */
         , allocBig));
     p->matchFinderObj = &p->matchFinderMt;
-    MFB.bigHash = (Byte)(
-        (p->dictSize > kBigHashDicLimit && MFB.hashMask >= 0xFFFFFF) ? 1 : 0);
+    p->matchFinderBase.bigHash = (Byte)(
+        (p->dictSize > kBigHashDicLimit && p->matchFinderBase.hashMask >= 0xFFFFFF) ? 1 : 0);
     MatchFinderMt_CreateVTable(&p->matchFinderMt, &p->matchFinder);
   }
   else
   #endif
   {
-    if (!MatchFinder_Create(&MFB, dictSize, beforeSize,
-        p->numFastBytes, LZMA_MATCH_LEN_MAX + 1 /* 21.03 */
-        , allocBig))
+    if (!MatchFinder_Create(&p->matchFinderBase, p->dictSize, beforeSize, p->numFastBytes, LZMA_MATCH_LEN_MAX, allocBig))
       return SZ_ERROR_MEM;
-    p->matchFinderObj = &MFB;
-    MatchFinder_CreateVTable(&MFB, &p->matchFinder);
+    p->matchFinderObj = &p->matchFinderBase;
+    MatchFinder_CreateVTable(&p->matchFinderBase, &p->matchFinder);
   }
   
   return SZ_OK;
@@ -2840,8 +2700,6 @@ static void LzmaEnc_Init(CLzmaEnc *p)
 
   p->pbMask = ((unsigned)1 << p->pb) - 1;
   p->lpMask = ((UInt32)0x100 << p->lp) - ((unsigned)0x100 >> p->lc);
-
-  // p->mf_Failure = False;
 }
 
 
@@ -2884,7 +2742,7 @@ static SRes LzmaEnc_Prepare(CLzmaEncHandle pp, ISeqOutStream *outStream, ISeqInS
     ISzAllocPtr alloc, ISzAllocPtr allocBig)
 {
   CLzmaEnc *p = (CLzmaEnc *)pp;
-  MFB.stream = inStream;
+  p->matchFinderBase.stream = inStream;
   p->needInit = 1;
   p->rc.outStream = outStream;
   return LzmaEnc_AllocAndInit(p, 0, alloc, allocBig);
@@ -2895,16 +2753,16 @@ SRes LzmaEnc_PrepareForLzma2(CLzmaEncHandle pp,
     ISzAllocPtr alloc, ISzAllocPtr allocBig)
 {
   CLzmaEnc *p = (CLzmaEnc *)pp;
-  MFB.stream = inStream;
+  p->matchFinderBase.stream = inStream;
   p->needInit = 1;
   return LzmaEnc_AllocAndInit(p, keepWindowSize, alloc, allocBig);
 }
 
 static void LzmaEnc_SetInputBuf(CLzmaEnc *p, const Byte *src, SizeT srcLen)
 {
-  MFB.directInput = 1;
-  MFB.bufferBase = (Byte *)src;
-  MFB.directInputRem = srcLen;
+  p->matchFinderBase.directInput = 1;
+  p->matchFinderBase.bufferBase = (Byte *)src;
+  p->matchFinderBase.directInputRem = srcLen;
 }
 
 SRes LzmaEnc_MemPrepare(CLzmaEncHandle pp, const Byte *src, SizeT srcLen,
@@ -3037,7 +2895,7 @@ static SRes LzmaEnc_Encode2(CLzmaEnc *p, ICompressProgress *progress)
   LzmaEnc_Finish(p);
 
   /*
-  if (res == SZ_OK && !Inline_MatchFinder_IsFinishedOK(&MFB))
+  if (res == SZ_OK && !Inline_MatchFinder_IsFinishedOK(&p->matchFinderBase))
     res = SZ_ERROR_FAIL;
   }
   */
@@ -3056,37 +2914,29 @@ SRes LzmaEnc_Encode(CLzmaEncHandle pp, ISeqOutStream *outStream, ISeqInStream *i
 
 SRes LzmaEnc_WriteProperties(CLzmaEncHandle pp, Byte *props, SizeT *size)
 {
+  CLzmaEnc *p = (CLzmaEnc *)pp;
+  unsigned i;
+  UInt32 dictSize = p->dictSize;
   if (*size < LZMA_PROPS_SIZE)
     return SZ_ERROR_PARAM;
   *size = LZMA_PROPS_SIZE;
-  {
-    const CLzmaEnc *p = (const CLzmaEnc *)pp;
-    const UInt32 dictSize = p->dictSize;
-    UInt32 v;
-    props[0] = (Byte)((p->pb * 5 + p->lp) * 9 + p->lc);
-    
-    // we write aligned dictionary value to properties for lzma decoder
-    if (dictSize >= ((UInt32)1 << 21))
-    {
-      const UInt32 kDictMask = ((UInt32)1 << 20) - 1;
-      v = (dictSize + kDictMask) & ~kDictMask;
-      if (v < dictSize)
-        v = dictSize;
-    }
-    else
-    {
-      unsigned i = 11 * 2;
-      do
-      {
-        v = (UInt32)(2 + (i & 1)) << (i >> 1);
-        i++;
-      }
-      while (v < dictSize);
-    }
+  props[0] = (Byte)((p->pb * 5 + p->lp) * 9 + p->lc);
 
-    SetUi32(props + 1, v);
-    return SZ_OK;
+  if (dictSize >= ((UInt32)1 << 22))
+  {
+    const UInt32 kDictMask = ((UInt32)1 << 20) - 1;
+    if (dictSize < (UInt32)0xFFFFFFFF - kDictMask)
+      dictSize = (dictSize + kDictMask) & ~kDictMask;
   }
+  else for (i = 11; i <= 30; i++)
+  {
+    if (dictSize <= ((UInt32)2 << i)) { dictSize = ((UInt32)2 << i); break; }
+    if (dictSize <= ((UInt32)3 << i)) { dictSize = ((UInt32)3 << i); break; }
+  }
+
+  for (i = 0; i < 4; i++)
+    props[1 + i] = (Byte)(dictSize >> (8 * i));
+  return SZ_OK;
 }
 
 

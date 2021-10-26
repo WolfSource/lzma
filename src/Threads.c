@@ -1,5 +1,5 @@
 /* Threads.c -- multithreading library
-2021-07-12 : Igor Pavlov : Public domain */
+2021-04-25 : Igor Pavlov : Public domain */
 
 #include "Precomp.h"
 
@@ -150,17 +150,6 @@ WRes Semaphore_Create(CSemaphore *p, UInt32 initCount, UInt32 maxCount)
   return HandleToWRes(*p);
 }
 
-WRes Semaphore_OptCreateInit(CSemaphore *p, UInt32 initCount, UInt32 maxCount)
-{
-  // if (Semaphore_IsCreated(p))
-  {
-    WRes wres = Semaphore_Close(p);
-    if (wres != 0)
-      return wres;
-  }
-  return Semaphore_Create(p, initCount, maxCount);
-}
-
 static WRes Semaphore_Release(CSemaphore *p, LONG releaseCount, LONG *previousCount)
   { return BOOLToWRes(ReleaseSemaphore(*p, releaseCount, previousCount)); }
 WRes Semaphore_ReleaseN(CSemaphore *p, UInt32 num)
@@ -169,9 +158,7 @@ WRes Semaphore_Release1(CSemaphore *p) { return Semaphore_ReleaseN(p, 1); }
 
 WRes CriticalSection_Init(CCriticalSection *p)
 {
-  /* InitializeCriticalSection() can raise exception:
-     Windows XP, 2003 : can raise a STATUS_NO_MEMORY exception
-     Windows Vista+   : no exceptions */
+  /* InitializeCriticalSection can raise only STATUS_NO_MEMORY exception */
   #ifdef _MSC_VER
   __try
   #endif
@@ -180,7 +167,7 @@ WRes CriticalSection_Init(CCriticalSection *p)
     /* InitializeCriticalSectionAndSpinCount(p, 0); */
   }
   #ifdef _MSC_VER
-  __except (EXCEPTION_EXECUTE_HANDLER) { return ERROR_NOT_ENOUGH_MEMORY; }
+  __except (EXCEPTION_EXECUTE_HANDLER) { return 1; }
   #endif
   return 0;
 }
@@ -418,27 +405,6 @@ WRes Semaphore_Create(CSemaphore *p, UInt32 initCount, UInt32 maxCount)
   p->_created = 1;
   return 0;
 }
-
-
-WRes Semaphore_OptCreateInit(CSemaphore *p, UInt32 initCount, UInt32 maxCount)
-{
-  if (Semaphore_IsCreated(p))
-  {
-    /*
-    WRes wres = Semaphore_Close(p);
-    if (wres != 0)
-      return wres;
-    */
-    if (initCount > maxCount || maxCount < 1)
-      return EINVAL;
-    // return EINVAL; // for debug
-    p->_count = initCount;
-    p->_maxCount = maxCount;
-    return 0;
-  }
-  return Semaphore_Create(p, initCount, maxCount);
-}
-
 
 WRes Semaphore_ReleaseN(CSemaphore *p, UInt32 releaseCount)
 {
