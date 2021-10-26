@@ -3,6 +3,7 @@ project(lzma)
 
 set(CMAKE_C_STANDARD 11)
 set(LIBRARY_TYPE "STATIC")
+set(LZ4_SOURCE_FILES ${CMAKE_CURRENT_SOURCE_DIR}/src)
 
 set(CMAKE_INSTALL_INCLUDEDIR ${CMAKE_INSTALL_PREFIX}/include)
 set(CMAKE_INSTALL_LIBDIR ${CMAKE_INSTALL_PREFIX}/lib)
@@ -13,56 +14,95 @@ endif()
 
 # add sources
 add_library(${PROJECT_NAME} ${LIBRARY_TYPE}
-    src/7zAlloc.c
-	src/7zArcIn.c
-	src/7zBuf.c
-	src/7zBuf2.c
-	src/7zCrc.c
-	src/7zCrcOpt.c
-	src/7zDec.c
-	src/7zFile.c
-	src/7zStream.c
-	src/Aes.c
-	src/AesOpt.c
-	src/Alloc.c
-	src/Bcj2.c
-	src/Bcj2Enc.c
-	src/Bra.c
-	src/Bra86.c
-	src/BraIA64.c
-	src/CpuArch.c
-	src/Delta.c
-	src/DllSecur.c
-	src/LzFind.c
-	src/LzFindMt.c
-	src/Lzma2Dec.c
-	src/Lzma2DecMt.c
-	src/Lzma2Enc.c
-	src/Lzma86Dec.c
-	src/Lzma86Enc.c
-	src/LzmaDec.c
-	src/LzmaEnc.c
-	src/LzmaLib.c
-	src/MtCoder.c
-	src/MtDec.c
-	src/Ppmd7.c
-	src/Ppmd7Dec.c
-	src/Ppmd7Enc.c
-	src/Sha256.c
-	src/Sha256Opt.c
-	src/Sort.c
-	src/Threads.c
-	src/Xz.c
-	src/XzCrc64.c
-	src/XzCrc64Opt.c
-	src/XzDec.c
-	src/XzEnc.c
-	src/XzIn.c
+    ${LZ4_SOURCE_FILES}/7zAlloc.c
+	${LZ4_SOURCE_FILES}/7zArcIn.c
+	${LZ4_SOURCE_FILES}/7zBuf.c
+	${LZ4_SOURCE_FILES}/7zBuf2.c
+	${LZ4_SOURCE_FILES}/7zCrc.c
+	${LZ4_SOURCE_FILES}/7zCrcOpt.c
+	${LZ4_SOURCE_FILES}/7zDec.c
+	${LZ4_SOURCE_FILES}/7zFile.c
+	${LZ4_SOURCE_FILES}/7zStream.c
+	${LZ4_SOURCE_FILES}/Aes.c
+	${LZ4_SOURCE_FILES}/AesOpt.c
+	${LZ4_SOURCE_FILES}/Alloc.c
+	${LZ4_SOURCE_FILES}/Bcj2.c
+	${LZ4_SOURCE_FILES}/Bcj2Enc.c
+	${LZ4_SOURCE_FILES}/Bra.c
+	${LZ4_SOURCE_FILES}/Bra86.c
+	${LZ4_SOURCE_FILES}/BraIA64.c
+	${LZ4_SOURCE_FILES}/CpuArch.c
+	${LZ4_SOURCE_FILES}/Delta.c
+	${LZ4_SOURCE_FILES}/DllSecur.c
+	${LZ4_SOURCE_FILES}/LzFind.c
+	${LZ4_SOURCE_FILES}/LzFindMt.c
+	${LZ4_SOURCE_FILES}/Lzma2Dec.c
+	${LZ4_SOURCE_FILES}/Lzma2DecMt.c
+	${LZ4_SOURCE_FILES}/Lzma2Enc.c
+	${LZ4_SOURCE_FILES}/Lzma86Dec.c
+	${LZ4_SOURCE_FILES}/Lzma86Enc.c
+	${LZ4_SOURCE_FILES}/LzmaDec.c
+	${LZ4_SOURCE_FILES}/LzmaEnc.c
+	${LZ4_SOURCE_FILES}/LzmaLib.c
+	${LZ4_SOURCE_FILES}/MtCoder.c
+	${LZ4_SOURCE_FILES}/MtDec.c
+	${LZ4_SOURCE_FILES}/Ppmd7.c
+	${LZ4_SOURCE_FILES}/Ppmd7Dec.c
+	${LZ4_SOURCE_FILES}/Ppmd7Enc.c
+	${LZ4_SOURCE_FILES}/Sha256.c
+	${LZ4_SOURCE_FILES}/Sha256Opt.c
+	${LZ4_SOURCE_FILES}/Sort.c
+	${LZ4_SOURCE_FILES}/Threads.c
+	${LZ4_SOURCE_FILES}/Xz.c
+	${LZ4_SOURCE_FILES}/XzCrc64.c
+	${LZ4_SOURCE_FILES}/XzCrc64Opt.c
+	${LZ4_SOURCE_FILES}/XzDec.c
+	${LZ4_SOURCE_FILES}/XzEnc.c
+	${LZ4_SOURCE_FILES}/XzIn.c
  )
 target_include_directories(${PROJECT_NAME} PUBLIC ".")
 install(TARGETS ${PROJECT_NAME}   
-        LIBRARY DESTINATION lib)
-	
+        LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR})
+install(FILES
+		"${LZ4_SOURCE_FILES}/7z.h"
+		"${LZ4_SOURCE_FILES}/7zAlloc.h"
+		"${LZ4_SOURCE_FILES}/7zBuf.h"
+		"${LZ4_SOURCE_FILES}/7zCrc.h"
+		"${LZ4_SOURCE_FILES}/7zFile.h"
+		"${LZ4_SOURCE_FILES}/7zTypes.h"
+		"${LZ4_SOURCE_FILES}/7zVersion.h"
+		"${LZ4_SOURCE_FILES}/Aes.h"
+		"${LZ4_SOURCE_FILES}/Alloc.h"
+		"${LZ4_SOURCE_FILES}/Bcj2.h"
+		"${LZ4_SOURCE_FILES}/Bra.h"
+		"${LZ4_SOURCE_FILES}/Compiler.h"
+		"${LZ4_SOURCE_FILES}/CpuArch.h"
+		"${LZ4_SOURCE_FILES}/Delta.h"
+		"${LZ4_SOURCE_FILES}/DllSecur.h"
+		"${LZ4_SOURCE_FILES}/LzFind.h"
+		"${LZ4_SOURCE_FILES}/LzFindMt.h"
+		"${LZ4_SOURCE_FILES}/LzHash.h"
+		"${LZ4_SOURCE_FILES}/Lzma2Dec.h"
+		"${LZ4_SOURCE_FILES}/Lzma2DecMt.h"
+		"${LZ4_SOURCE_FILES}/Lzma2Enc.h"
+		"${LZ4_SOURCE_FILES}/Lzma86.h"
+		"${LZ4_SOURCE_FILES}/LzmaDec.h"
+		"${LZ4_SOURCE_FILES}/LzmaEnc.h"
+		"${LZ4_SOURCE_FILES}/LzmaLib.h"
+		"${LZ4_SOURCE_FILES}/MtCoder.h"
+		"${LZ4_SOURCE_FILES}/MtDec.h"
+		"${LZ4_SOURCE_FILES}/Ppmd.h"
+		"${LZ4_SOURCE_FILES}/Ppmd7.h"
+		"${LZ4_SOURCE_FILES}/Precomp.h"		
+		"${LZ4_SOURCE_FILES}/RotateDefs.h"
+		"${LZ4_SOURCE_FILES}/Sha256.h"
+		"${LZ4_SOURCE_FILES}/Sort.h"
+		"${LZ4_SOURCE_FILES}/Threads.h"
+		"${LZ4_SOURCE_FILES}/Xz.h"
+		"${LZ4_SOURCE_FILES}/XzCrc64.h"
+		"${LZ4_SOURCE_FILES}/XzEnc.h"
+		DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}")
+
 if (LINUX)
     add_compile_options(-fPIC)
 endif()
