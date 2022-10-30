@@ -36,6 +36,7 @@ add_library(${PROJECT_NAME} ${LIBRARY_TYPE}
 	${LZ4_SOURCE_FILES}/DllSecur.c
 	${LZ4_SOURCE_FILES}/LzFind.c
 	${LZ4_SOURCE_FILES}/LzFindMt.c
+	${LZ4_SOURCE_FILES}/LzFindOpt.c
 	${LZ4_SOURCE_FILES}/Lzma2Dec.c
 	${LZ4_SOURCE_FILES}/Lzma2DecMt.c
 	${LZ4_SOURCE_FILES}/Lzma2Enc.c
